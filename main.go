@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/jiotv-go/jiotv_go/v3/cmd"
+	"github.com/Varun03-max/JIO/cmd"
 )
 
 func main() {
