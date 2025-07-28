@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/jiotv-go/jiotv_go/v3/pkg/store"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/Varun03-max/JIO/pkg/store"
+	"github.com/Varun03-max/JIO/pkg/utils"
 
 	"golang.org/x/term"
 )
