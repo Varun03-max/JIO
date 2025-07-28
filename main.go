@@ -8,22 +8,21 @@ import (
 )
 
 func main() {
-	// Read port and config from environment or default
+	// Read port from environment or use default
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	// Optional config path — use empty to load from ENV
 	configPath := os.Getenv("CONFIG_PATH")
-	if configPath == "" {
-		configPath = "config.json"
-	}
 
+	// If CONFIG_PATH is empty, we use environment variables (no file needed)
 	serverConfig := cmd.JioTVServerConfig{
 		Host:       "0.0.0.0",
 		Port:       port,
-		ConfigPath: configPath,
-		TLS:        false, // or true if you're using HTTPS
+		ConfigPath: configPath, // "" triggers env loading in your config.go
+		TLS:        false,
 	}
 
 	if err := cmd.JioTVServer(serverConfig); err != nil {
