@@ -10,8 +10,8 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/jiotv-go/jiotv_go/v3/internal/config"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/Varun03-max/JIO/internal/config"
+	"github.com/Varun03-max/JIO/pkg/utils"
 )
 
 var (

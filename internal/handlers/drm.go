@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/Varun03-max/JIO/pkg/secureurl"
+	"github.com/Varun03-max/JIO/pkg/utils"
 	"github.com/valyala/fasthttp"
 
 	"github.com/gofiber/fiber/v2"

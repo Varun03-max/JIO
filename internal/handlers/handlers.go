@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jiotv-go/jiotv_go/v3/internal/config"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/Varun03-max/JIO/internal/config"
+	"github.com/Varun03-max/JIO/pkg/secureurl"
+	"github.com/Varun03-max/JIO/pkg/television"
+	"github.com/Varun03-max/JIO/pkg/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"

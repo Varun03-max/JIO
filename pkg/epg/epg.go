@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jiotv-go/jiotv_go/v3/pkg/scheduler"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/Varun03-max/JIO/pkg/scheduler"
+	"github.com/Varun03-max/JIO/pkg/utils"
 	"github.com/schollz/progressbar/v3"
 	"github.com/valyala/fasthttp"
 )
