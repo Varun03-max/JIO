@@ -20,12 +20,20 @@ func main() {
 	cmd.InitializeLogger(config)
 
 	// Use the logger
-	cmd.Logger.Info("Starting JioTV Go CLI")
+	if cmd.Logger != nil {
+		cmd.Logger.Info("Starting JioTV Go CLI")
+	} else {
+		log.Println("Logger not initialized")
+	}
 
 	// Start the CLI app
 	err = cmd.RunCLI()
 	if err != nil {
-		cmd.Logger.Fatalf("CLI Error: %v", err)
+		if cmd.Logger != nil {
+			cmd.Logger.Fatalf("CLI Error: %v", err)
+		} else {
+			log.Fatalf("CLI Error: %v", err)
+		}
 	}
 
 	// Setup for Render or local server if needed
@@ -36,9 +44,18 @@ func main() {
 	host := "0.0.0.0"
 	addr := fmt.Sprintf("%s:%s", host, port)
 
-	cmd.Logger.Infof("Web server running on %s", addr)
+	if cmd.Logger != nil {
+		cmd.Logger.Infof("Web server running on %s", addr)
+	} else {
+		log.Printf("Web server running on %s\n", addr)
+	}
+
 	err = http.ListenAndServe(addr, nil)
 	if err != nil {
-		cmd.Logger.Fatalf("Server failed: %v", err)
+		if cmd.Logger != nil {
+			cmd.Logger.Fatalf("Server failed: %v", err)
+		} else {
+			log.Fatalf("Server failed: %v", err)
+		}
 	}
 }
