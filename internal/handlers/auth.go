@@ -19,11 +19,11 @@ const (
 	REFRESH_SSOTOKEN_TASK_ID = "jiotv_refresh_sso_token"
 )
 
-// LoginSendOTPHandler sends OTP to the mobile number
+// LoginSendOTPHandler sends OTP for login
 func LoginSendOTPHandler(c *fiber.Ctx) error {
 	formBody := new(LoginSendOTPRequestBodyData)
 	if err := c.BodyParser(formBody); err != nil {
-		utils.Log.Println(err)
+		utils.Log.Println("Invalid JSON:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid JSON"})
 	}
 	if err := checkFieldExist("Mobile Number", formBody.MobileNumber != "", c); err != nil {
@@ -32,17 +32,17 @@ func LoginSendOTPHandler(c *fiber.Ctx) error {
 
 	result, err := utils.LoginSendOTP(formBody.MobileNumber)
 	if err != nil {
-		utils.Log.Println(err)
+		utils.Log.Println("Send OTP Error:", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": err.Error()})
 	}
 	return c.JSON(fiber.Map{"status": result})
 }
 
-// LoginVerifyOTPHandler verifies the OTP and logs in the user
+// LoginVerifyOTPHandler verifies OTP and logs in the user
 func LoginVerifyOTPHandler(c *fiber.Ctx) error {
 	formBody := new(LoginVerifyOTPRequestBodyData)
 	if err := c.BodyParser(formBody); err != nil {
-		utils.Log.Println(err)
+		utils.Log.Println("Invalid JSON:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid JSON"})
 	}
 	if err := checkFieldExist("Mobile Number", formBody.MobileNumber != "", c); err != nil {
@@ -54,14 +54,22 @@ func LoginVerifyOTPHandler(c *fiber.Ctx) error {
 
 	result, err := utils.LoginVerifyOTP(formBody.MobileNumber, formBody.OTP)
 	if err != nil {
-		utils.Log.Println(err)
+		utils.Log.Println("Verify OTP Error:", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Internal server error"})
 	}
-	Init()
-	return c.JSON(result)
+
+	if result["status"] == "success" {
+		// Only now we init the handlers safely
+		if err := Init(); err != nil {
+			utils.Log.Println("Init failed:", err)
+		}
+		return c.JSON(fiber.Map{"status": "success", "message": "Login successful"})
+	}
+
+	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Login failed"})
 }
 
-// LoginPasswordHandler logs in the user using password
+// LoginPasswordHandler logs in using mobile + password
 func LoginPasswordHandler(c *fiber.Ctx) error {
 	var username, password string
 
@@ -71,7 +79,7 @@ func LoginPasswordHandler(c *fiber.Ctx) error {
 	} else {
 		formBody := new(LoginRequestBodyData)
 		if err := c.BodyParser(formBody); err != nil {
-			utils.Log.Println(err)
+			utils.Log.Println("Invalid JSON:", err)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid JSON"})
 		}
 		username = formBody.Username
@@ -87,133 +95,30 @@ func LoginPasswordHandler(c *fiber.Ctx) error {
 
 	result, err := utils.Login(username, password)
 	if err != nil {
-		utils.Log.Println(err)
+		utils.Log.Println("Password login error:", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Internal server error"})
 	}
-	Init()
-	return c.JSON(result)
+
+	if result["status"] == "success" {
+		if err := Init(); err != nil {
+			utils.Log.Println("Init failed after password login:", err)
+		}
+		return c.JSON(fiber.Map{"status": "success", "message": "Login successful"})
+	}
+
+	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Login failed"})
 }
 
-// LogoutHandler logs the user out
+// LogoutHandler logs out and resets session
 func LogoutHandler(c *fiber.Ctx) error {
 	if !isLogoutDisabled {
 		if err := utils.Logout(); err != nil {
-			utils.Log.Println(err)
+			utils.Log.Println("Logout error:", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Internal server error"})
 		}
-		Init()
+		if err := Init(); err != nil {
+			utils.Log.Println("Re-init after logout error:", err)
+		}
 	}
 	return c.Redirect("/", fiber.StatusFound)
-}
-
-// LoginRefreshAccessToken refreshes access token
-func LoginRefreshAccessToken() error {
-	tokenData, err := utils.GetJIOTVCredentials()
-	if err != nil {
-		return err
-	}
-
-	reqBody := map[string]string{
-		"appName":      "RJIL_JioTV",
-		"deviceId":     utils.GetDeviceID(),
-		"refreshToken": tokenData.RefreshToken,
-	}
-	bodyJSON, _ := json.Marshal(reqBody)
-
-	req := fasthttp.AcquireRequest()
-	req.SetRequestURI(REFRESH_TOKEN_URL)
-	req.Header.SetMethod("POST")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("accessToken", tokenData.AccessToken)
-	req.SetBody(bodyJSON)
-
-	resp := fasthttp.AcquireResponse()
-	client := utils.GetRequestClient()
-	if err := client.Do(req, resp); err != nil {
-		return err
-	}
-	if resp.StatusCode() != fasthttp.StatusOK {
-		return fmt.Errorf("AccessToken refresh failed with status code: %d", resp.StatusCode())
-	}
-
-	var result RefreshTokenResponse
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return err
-	}
-
-	if result.AccessToken != "" {
-		tokenData.AccessToken = result.AccessToken
-		tokenData.LastTokenRefreshTime = strconv.FormatInt(time.Now().Unix(), 10)
-		if err := utils.WriteJIOTVCredentials(tokenData); err != nil {
-			return err
-		}
-		TV = television.New(tokenData)
-		go RefreshTokenIfExpired(tokenData)
-	}
-	return nil
-}
-
-// LoginRefreshSSOToken refreshes SSO token
-func LoginRefreshSSOToken() error {
-	tokenData, err := utils.GetJIOTVCredentials()
-	if err != nil {
-		return err
-	}
-
-	req := fasthttp.AcquireRequest()
-	req.SetRequestURI(REFRESH_SSO_TOKEN_URL)
-	req.Header.SetMethod("GET")
-	req.Header.Set("ssoToken", tokenData.SSOToken)
-	req.Header.Set("deviceid", utils.GetDeviceID())
-
-	resp := fasthttp.AcquireResponse()
-	client := utils.GetRequestClient()
-	if err := client.Do(req, resp); err != nil {
-		return err
-	}
-	if resp.StatusCode() != fasthttp.StatusOK {
-		return fmt.Errorf("SSOToken refresh failed with status code: %d", resp.StatusCode())
-	}
-
-	var result RefreshSSOTokenResponse
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return err
-	}
-
-	if result.SSOToken != "" {
-		tokenData.SSOToken = result.SSOToken
-		tokenData.LastSSOTokenRefreshTime = strconv.FormatInt(time.Now().Unix(), 10)
-		if err := utils.WriteJIOTVCredentials(tokenData); err != nil {
-			return err
-		}
-		TV = television.New(tokenData)
-		go RefreshSSOTokenIfExpired(tokenData)
-	}
-	return nil
-}
-
-// RefreshTokenIfExpired schedules a refresh if token is expiring
-func RefreshTokenIfExpired(creds *utils.JIOTV_CREDENTIALS) error {
-	lastRefresh, _ := strconv.ParseInt(creds.LastTokenRefreshTime, 10, 64)
-	next := time.Unix(lastRefresh, 0).Add(1*time.Hour + 50*time.Minute)
-	if next.Before(time.Now()) {
-		return LoginRefreshAccessToken()
-	}
-	go scheduler.Add(REFRESH_TOKEN_TASK_ID, time.Until(next), func() error {
-		return RefreshTokenIfExpired(creds)
-	})
-	return nil
-}
-
-// RefreshSSOTokenIfExpired schedules a refresh if SSO token is expiring
-func RefreshSSOTokenIfExpired(creds *utils.JIOTV_CREDENTIALS) error {
-	lastRefresh, _ := strconv.ParseInt(creds.LastSSOTokenRefreshTime, 10, 64)
-	next := time.Unix(lastRefresh, 0).Add(24 * time.Hour)
-	if next.Before(time.Now()) {
-		return LoginRefreshSSOToken()
-	}
-	go scheduler.Add(REFRESH_SSOTOKEN_TASK_ID, time.Until(next), func() error {
-		return RefreshSSOTokenIfExpired(creds)
-	})
-	return nil
 }
