@@ -19,7 +19,7 @@ const (
 	REFRESH_SSOTOKEN_TASK_ID = "jiotv_refresh_sso_token"
 )
 
-// LoginSendOTPHandler sends OTP for login
+// LoginSendOTPHandler sends OTP to the mobile number
 func LoginSendOTPHandler(c *fiber.Ctx) error {
 	formBody := new(LoginSendOTPRequestBodyData)
 	if err := c.BodyParser(formBody); err != nil {
@@ -38,7 +38,7 @@ func LoginSendOTPHandler(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": result})
 }
 
-// LoginVerifyOTPHandler verifies OTP and login
+// LoginVerifyOTPHandler verifies the OTP and logs in the user
 func LoginVerifyOTPHandler(c *fiber.Ctx) error {
 	formBody := new(LoginVerifyOTPRequestBodyData)
 	if err := c.BodyParser(formBody); err != nil {
@@ -61,7 +61,7 @@ func LoginVerifyOTPHandler(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
-// LoginPasswordHandler is used to login with password
+// LoginPasswordHandler logs in the user using password
 func LoginPasswordHandler(c *fiber.Ctx) error {
 	var username, password string
 
@@ -94,7 +94,7 @@ func LoginPasswordHandler(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
-// LogoutHandler logs out the user
+// LogoutHandler logs the user out
 func LogoutHandler(c *fiber.Ctx) error {
 	if !isLogoutDisabled {
 		if err := utils.Logout(); err != nil {
@@ -106,6 +106,7 @@ func LogoutHandler(c *fiber.Ctx) error {
 	return c.Redirect("/", fiber.StatusFound)
 }
 
+// LoginRefreshAccessToken refreshes access token
 func LoginRefreshAccessToken() error {
 	tokenData, err := utils.GetJIOTVCredentials()
 	if err != nil {
@@ -152,6 +153,7 @@ func LoginRefreshAccessToken() error {
 	return nil
 }
 
+// LoginRefreshSSOToken refreshes SSO token
 func LoginRefreshSSOToken() error {
 	tokenData, err := utils.GetJIOTVCredentials()
 	if err != nil {
@@ -190,25 +192,27 @@ func LoginRefreshSSOToken() error {
 	return nil
 }
 
+// RefreshTokenIfExpired schedules a refresh if token is expiring
 func RefreshTokenIfExpired(creds *utils.JIOTV_CREDENTIALS) error {
 	lastRefresh, _ := strconv.ParseInt(creds.LastTokenRefreshTime, 10, 64)
 	next := time.Unix(lastRefresh, 0).Add(1*time.Hour + 50*time.Minute)
 	if next.Before(time.Now()) {
 		return LoginRefreshAccessToken()
 	}
-	scheduler.Add(REFRESH_TOKEN_TASK_ID, time.Until(next), func() error {
+	go scheduler.Add(REFRESH_TOKEN_TASK_ID, time.Until(next), func() error {
 		return RefreshTokenIfExpired(creds)
 	})
 	return nil
 }
 
+// RefreshSSOTokenIfExpired schedules a refresh if SSO token is expiring
 func RefreshSSOTokenIfExpired(creds *utils.JIOTV_CREDENTIALS) error {
 	lastRefresh, _ := strconv.ParseInt(creds.LastSSOTokenRefreshTime, 10, 64)
 	next := time.Unix(lastRefresh, 0).Add(24 * time.Hour)
 	if next.Before(time.Now()) {
 		return LoginRefreshSSOToken()
 	}
-	scheduler.Add(REFRESH_SSOTOKEN_TASK_ID, time.Until(next), func() error {
+	go scheduler.Add(REFRESH_SSOTOKEN_TASK_ID, time.Until(next), func() error {
 		return RefreshSSOTokenIfExpired(creds)
 	})
 	return nil
