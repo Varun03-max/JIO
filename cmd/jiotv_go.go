@@ -31,8 +31,9 @@ type JioTVServerConfig struct {
 	TLSKeyPath  string
 }
 
-func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
-	if err := config.Cfg.Load(jiotvServerConfig.ConfigPath); err != nil {
+func JioTVServer(cfg JioTVServerConfig) error {
+	// Load config (file or env)
+	if err := config.Cfg.Load(cfg.ConfigPath); err != nil {
 		return err
 	}
 
@@ -54,74 +55,73 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 		AppName:           fmt.Sprintf("JioTV Go %s", constants.Version),
 	})
 
-	app.Use(recover.New(recover.Config{
-		EnableStackTrace: true,
-	}))
-
+	app.Use(recover.New(recover.Config{EnableStackTrace: true}))
 	app.Use(middleware.CORS())
-
 	app.Use(logger.New(logger.Config{
 		TimeZone: "Asia/Kolkata",
 		Format:   "[${time}] ${status} - ${latency} ${method} ${path} Params:[${queryParams}] ${error}\n",
 		Output:   utils.Log.Writer(),
 	}))
-
 	app.Use("/static", filesystem.New(filesystem.Config{
 		Root:       http.FS(web.GetStaticFiles()),
 		PathPrefix: "static",
 		Browse:     false,
 	}))
 
-	// Public login routes
+	// Login routes (always enabled)
 	app.Post("/login/sendOTP", handlers.LoginSendOTPHandler)
 	app.Post("/login/verifyOTP", handlers.LoginVerifyOTPHandler)
 	app.Post("/login", handlers.LoginPasswordHandler)
 
-	// Proceed only if session (store.json) is available
-	loggedIn := utils.FileExists("store.json")
-	if loggedIn {
+	// Load after login only
+	if utils.FileExists("store.json") {
 		if err := store.Init(); err != nil {
 			return err
 		}
 		secureurl.Init()
+
 		if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
 			go epg.Init()
 		}
+
 		scheduler.Init()
 		defer scheduler.Stop()
+
+		// All protected routes
+		app.Use("/out/", handlers.SLHandler)
+		app.Get("/channels", handlers.ChannelsHandler)
+		app.Get("/playlist.m3u", handlers.PlaylistHandler)
+		app.Get("/live/:id", handlers.LiveHandler)
+		app.Get("/live/:quality/:id", handlers.LiveQualityHandler)
+		app.Get("/play/:id", handlers.PlayHandler)
+		app.Get("/player/:id", handlers.PlayerHandler)
+		app.Get("/render.m3u8", handlers.RenderHandler)
+		app.Get("/render.ts", handlers.RenderTSHandler)
+		app.Get("/render.key", handlers.RenderKeyHandler)
+		app.Get("/mpd/:channelID", handlers.LiveMpdHandler)
+		app.Post("/drm", handlers.DRMKeyHandler)
+		app.Get("/render.mpd", handlers.MpdHandler)
+		app.Use("/render.dash", handlers.DashHandler)
+		app.Get("/epg.xml.gz", handlers.EPGHandler)
+		app.Get("/epg/:channelID/:offset", handlers.WebEPGHandler)
+		app.Get("/jtvimage/:file", handlers.ImageHandler)
+		app.Get("/jtvposter/:date/:file", handlers.PosterHandler)
+		app.Get("/dashtime", handlers.DASHTimeHandler)
+		app.Get("/logout", handlers.LogoutHandler)
 		handlers.Init()
 	}
 
-	// All routes (many will fail if user is not logged in)
+	// Always show index page
 	app.Get("/", handlers.IndexHandler)
-	app.Get("/logout", handlers.LogoutHandler)
-	app.Get("/live/:id", handlers.LiveHandler)
-	app.Get("/live/:quality/:id", handlers.LiveQualityHandler)
-	app.Get("/render.m3u8", handlers.RenderHandler)
-	app.Get("/render.ts", handlers.RenderTSHandler)
-	app.Get("/render.key", handlers.RenderKeyHandler)
-	app.Get("/channels", handlers.ChannelsHandler)
-	app.Get("/playlist.m3u", handlers.PlaylistHandler)
-	app.Get("/play/:id", handlers.PlayHandler)
-	app.Get("/player/:id", handlers.PlayerHandler)
 	app.Get("/favicon.ico", handlers.FaviconHandler)
-	app.Get("/jtvimage/:file", handlers.ImageHandler)
-	app.Get("/epg.xml.gz", handlers.EPGHandler)
-	app.Get("/epg/:channelID/:offset", handlers.WebEPGHandler)
-	app.Get("/jtvposter/:date/:file", handlers.PosterHandler)
-	app.Get("/mpd/:channelID", handlers.LiveMpdHandler)
-	app.Post("/drm", handlers.DRMKeyHandler)
-	app.Get("/dashtime", handlers.DASHTimeHandler)
-	app.Get("/render.mpd", handlers.MpdHandler)
-	app.Use("/render.dash", handlers.DashHandler)
-	app.Use("/out/", handlers.SLHandler)
 
-	if jiotvServerConfig.TLS {
-		if jiotvServerConfig.TLSCertPath == "" || jiotvServerConfig.TLSKeyPath == "" {
-			return fmt.Errorf("TLS cert and key paths are required for HTTPS")
+	// Listen
+	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
+	if cfg.TLS {
+		if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
+			return fmt.Errorf("missing TLS cert/key")
 		}
-		return app.ListenTLS(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port), jiotvServerConfig.TLSCertPath, jiotvServerConfig.TLSKeyPath)
+		return app.ListenTLS(addr, cfg.TLSCertPath, cfg.TLSKeyPath)
 	}
-
-	return app.Listen(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port))
+	return app.Listen(addr)
 }
