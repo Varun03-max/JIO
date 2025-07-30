@@ -1,3 +1,12 @@
+package cmd
+
+import (
+    "fmt"
+    "net/http"
+    ...
+)
+
+// func JioTVServer(...) { ... }
 func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	// Load the config file or ENV
 	if err := config.Cfg.Load(jiotvServerConfig.ConfigPath); err != nil {
