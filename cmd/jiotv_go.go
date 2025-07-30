@@ -32,12 +32,10 @@ type JioTVServerConfig struct {
 }
 
 func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
-	// Load config
 	if err := config.Cfg.Load(jiotvServerConfig.ConfigPath); err != nil {
 		return err
 	}
 
-	// Initialize logger
 	utils.Log = utils.GetLogger()
 
 	engine := html.NewFileSystem(http.FS(web.GetViewFiles()), ".html")
@@ -74,29 +72,27 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 		Browse:     false,
 	}))
 
-	// Always-available login routes
+	// Public login routes
 	app.Post("/login/sendOTP", handlers.LoginSendOTPHandler)
 	app.Post("/login/verifyOTP", handlers.LoginVerifyOTPHandler)
 	app.Post("/login", handlers.LoginPasswordHandler)
 
-	// Load only after login
-	if utils.FileExists("store.json") {
+	// Proceed only if session (store.json) is available
+	loggedIn := utils.FileExists("store.json")
+	if loggedIn {
 		if err := store.Init(); err != nil {
 			return err
 		}
 		secureurl.Init()
-
 		if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
 			go epg.Init()
 		}
-
 		scheduler.Init()
 		defer scheduler.Stop()
+		handlers.Init()
 	}
 
-	handlers.Init()
-
-	// Main routes (some require login)
+	// All routes (many will fail if user is not logged in)
 	app.Get("/", handlers.IndexHandler)
 	app.Get("/logout", handlers.LogoutHandler)
 	app.Get("/live/:id", handlers.LiveHandler)
@@ -120,10 +116,9 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	app.Use("/render.dash", handlers.DashHandler)
 	app.Use("/out/", handlers.SLHandler)
 
-	// Start server
 	if jiotvServerConfig.TLS {
 		if jiotvServerConfig.TLSCertPath == "" || jiotvServerConfig.TLSKeyPath == "" {
-			return fmt.Errorf("TLS cert and key paths are required for HTTPS. Please provide them using --tls-cert and --tls-key flags")
+			return fmt.Errorf("TLS cert and key paths are required for HTTPS")
 		}
 		return app.ListenTLS(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port), jiotvServerConfig.TLSCertPath, jiotvServerConfig.TLSKeyPath)
 	}
