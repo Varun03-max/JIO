@@ -1,66 +1,11 @@
-package cmd
-
-import (
-	"fmt"
-	"net/http"
-
-	"github.com/Varun03-max/JIO/internal/config"
-	"github.com/Varun03-max/JIO/internal/constants"
-	"github.com/Varun03-max/JIO/internal/handlers"
-	"github.com/Varun03-max/JIO/internal/middleware"
-	"github.com/Varun03-max/JIO/pkg/epg"
-	"github.com/Varun03-max/JIO/pkg/scheduler"
-	"github.com/Varun03-max/JIO/pkg/secureurl"
-	"github.com/Varun03-max/JIO/pkg/store"
-	"github.com/Varun03-max/JIO/pkg/utils"
-	"github.com/Varun03-max/JIO/web"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/template/html/v2"
-)
-
-type JioTVServerConfig struct {
-	Host        string
-	Port        string
-	ConfigPath  string
-	TLS         bool
-	TLSCertPath string
-	TLSKeyPath  string
-}
-
-// JioTVServer starts the JioTV server.
-// It loads the config, initializes logging, secure URLs, and EPG.
-// It then configures the Fiber app with middleware and routes.
-// It starts listening on the provided host and port.
-// Returns an error if listening fails.
 func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
-	// Load the config file
+	// Load the config file or ENV
 	if err := config.Cfg.Load(jiotvServerConfig.ConfigPath); err != nil {
 		return err
 	}
 
-	// Initialize the logger object
+	// Initialize logger
 	utils.Log = utils.GetLogger()
-
-	// Initialize the store object
-	if err := store.Init(); err != nil {
-		return err
-	}
-
-	// Initialize the secureurl object
-	secureurl.Init()
-
-	// if config EPG is true or file epg.xml.gz exists
-	if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
-		go epg.Init()
-	}
-
-	// Start Scheduler
-	scheduler.Init()
-	defer scheduler.Stop()
 
 	engine := html.NewFileSystem(http.FS(web.GetViewFiles()), ".html")
 	if config.Cfg.Debug {
@@ -96,16 +41,32 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 		Browse:     false,
 	}))
 
-	// Handle all /out/* routes
-	app.Use("/out/", handlers.SLHandler)
-
-	// Initialize the television object
-	handlers.Init()
-
-	app.Get("/", handlers.IndexHandler)
+	// Routes for login — always available
 	app.Post("/login/sendOTP", handlers.LoginSendOTPHandler)
 	app.Post("/login/verifyOTP", handlers.LoginVerifyOTPHandler)
 	app.Post("/login", handlers.LoginPasswordHandler)
+
+	// Check if store.json (user session) exists before initializing login-dependent modules
+	if utils.FileExists("store.json") {
+		if err := store.Init(); err != nil {
+			return err
+		}
+
+		secureurl.Init()
+
+		if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
+			go epg.Init()
+		}
+
+		scheduler.Init()
+		defer scheduler.Stop()
+	}
+
+	// Initialize the television object (safe — will skip if not logged in)
+	handlers.Init()
+
+	// Static routes
+	app.Get("/", handlers.IndexHandler)
 	app.Get("/logout", handlers.LogoutHandler)
 	app.Get("/live/:id", handlers.LiveHandler)
 	app.Get("/live/:quality/:id", handlers.LiveQualityHandler)
@@ -124,16 +85,17 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	app.Get("/mpd/:channelID", handlers.LiveMpdHandler)
 	app.Post("/drm", handlers.DRMKeyHandler)
 	app.Get("/dashtime", handlers.DASHTimeHandler)
-
 	app.Get("/render.mpd", handlers.MpdHandler)
 	app.Use("/render.dash", handlers.DashHandler)
+	app.Use("/out/", handlers.SLHandler)
 
+	// Launch server
 	if jiotvServerConfig.TLS {
 		if jiotvServerConfig.TLSCertPath == "" || jiotvServerConfig.TLSKeyPath == "" {
 			return fmt.Errorf("TLS cert and key paths are required for HTTPS. Please provide them using --tls-cert and --tls-key flags")
 		}
 		return app.ListenTLS(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port), jiotvServerConfig.TLSCertPath, jiotvServerConfig.TLSKeyPath)
-	} else {
-		return app.Listen(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port))
 	}
+
+	return app.Listen(fmt.Sprintf("%s:%s", jiotvServerConfig.Host, jiotvServerConfig.Port))
 }
